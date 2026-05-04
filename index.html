@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Absen Papan Interaktif</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;800;900&display=swap');
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background-color: #f0f9ff;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* --- SCROLLBAR --- */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid #f0f9ff; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* --- ANIMASI & EFEK KARTU ANAK --- */
+        .kid-card { transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); transform-origin: center; cursor: pointer; }
+        .kid-card:active { transform: scale(0.95); }
+        .kid-card.idle { background: white; border: 4px dashed #cbd5e1; color: #64748b; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .kid-card.idle .avatar { filter: grayscale(100%) opacity(0.5); }
+        .kid-card.present { background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%); border: 4px solid #16a34a; color: white; transform: scale(1.05); box-shadow: 0 15px 25px -5px rgba(34, 197, 94, 0.4), 0 8px 10px -6px rgba(34, 197, 94, 0.2); z-index: 10; }
+        .kid-card.present .avatar { filter: none; transform: scale(1.2) translateY(-5px); transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+        @keyframes popStar { 0% { transform: scale(0) rotate(-45deg); opacity: 0; } 50% { transform: scale(1.5) rotate(15deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
+        .star-anim { animation: popStar 0.5s forwards; }
+
+        /* --- LAYOUT MODE GURU --- */
+        #mode-guru-layout { display: flex; width: 100vw; height: calc(100vh - 100px); }
+        #guru-main { flex: 1; overflow-y: auto; padding: 1.5rem; }
+        #guru-sidebar { width: 320px; background: white; border-left: 2px solid #e2e8f0; display: flex; flex-direction: column; }
+
+        @media (max-width: 768px) {
+            #mode-guru-layout { flex-direction: column; }
+            #guru-sidebar { width: 100%; height: auto; border-left: none; border-bottom: 2px solid #e2e8f0; order: -1; }
+            .nav-btn span { display: none; }
+        }
+
+        /* Toast */
+        #toast { position: fixed; top: -100px; left: 50%; transform: translateX(-50%); background: #1e293b; color: white; padding: 12px 24px; border-radius: 9999px; font-weight: 800; transition: top 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55); z-index: 9999; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        #toast.show { top: 20px; }
+        .btn-guru-mode { transition: all 0.2s; }
+        .btn-guru-mode:active { transform: scale(0.9); }
+
+        /* --- CSS KHUSUS CETAK (PRINT) --- */
+        @media print {
+            body { background: white !important; overflow: auto; }
+            header, #guru-sidebar, .print-hide { display: none !important; }
+            #mode-guru, #app-wrapper, #mode-guru-layout, #guru-main { 
+                display: block !important; height: auto !important; width: 100% !important; overflow: visible !important; position: static !important; padding: 0 !important;
+            }
+            #print-area { display: block; width: 100%; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #000; padding: 8px; text-align: left; }
+            th { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; }
+            .badge-print { font-weight: bold; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-sky-50 z-50 flex items-center justify-center">
+        <div class="text-center animate-pulse">
+            <div class="text-7xl mb-4">🏫</div>
+            <h1 class="text-3xl font-black text-sky-500">Menyiapkan Kelas...</h1>
+        </div>
+    </div>
+
+    <!-- HEADER GLOBAL (LEBIH LUAS) -->
+    <header class="bg-white min-h-[100px] shadow-sm px-6 py-4 flex justify-between items-center z-40 relative border-b-2 border-sky-100">
+        <div class="flex items-center gap-4">
+            <span class="text-4xl">🧸</span>
+            <div>
+                <p class="text-[11px] md:text-sm font-extrabold text-sky-400 uppercase tracking-widest mb-1">PAUD TERPADU KB dan TK AL-ISTIQLAL</p>
+                <h1 id="header-class-name" class="text-2xl md:text-3xl font-black text-sky-600 leading-none">Memuat...</h1>
+                <p id="header-date" class="text-sm md:text-base font-bold text-gray-400 mt-1"></p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="app.toggleFullScreen()" class="btn-guru-mode flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-600 w-12 h-12 md:w-auto md:px-5 md:py-3 rounded-xl font-bold border-2 border-slate-200 shadow-sm" title="Mode Layar Penuh">
+                <span id="fullscreen-icon" class="text-2xl">🔲</span>
+                <span class="hidden md:inline ml-2 text-lg">Layar Penuh</span>
+            </button>
+            <button onclick="app.toggleMode()" class="btn-guru-mode flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-5 py-3 rounded-xl font-bold border-2 border-slate-200 shadow-sm">
+                <span id="mode-icon" class="text-2xl">👩‍🏫</span>
+                <span id="mode-text" class="hidden md:inline text-lg">Mode Guru</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- WRAPPER APLIKASI -->
+    <div id="app-wrapper" class="hidden h-[calc(100vh-100px)] w-full relative">
+        
+        <!-- MODE ANAK -->
+        <main id="mode-anak" class="absolute inset-0 overflow-y-auto bg-sky-50 p-4 md:p-8">
+            <div class="max-w-7xl mx-auto">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl md:text-5xl font-black text-sky-400 drop-shadow-sm mb-2">Pilih Nama Kamu! 👆</h2>
+                    <p class="text-gray-500 font-bold text-lg md:text-xl">Sentuh kotak nama untuk absen hari ini.</p>
+                </div>
+                <div id="grid-anak" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6 pb-20"></div>
+                <div id="empty-anak" class="hidden text-center mt-20">
+                    <div class="text-8xl mb-6">🕵️‍♂️</div>
+                    <h3 class="text-2xl font-black text-gray-400">Belum ada siswa di kelas ini.</h3>
+                </div>
+            </div>
+        </main>
+
+        <!-- MODE GURU -->
+        <div id="mode-guru" class="absolute inset-0 bg-slate-50 hidden">
+            <div id="mode-guru-layout">
+                
+                <!-- Sidebar Navigasi -->
+                <aside id="guru-sidebar" class="p-4 flex flex-row md:flex-col gap-2 overflow-x-auto">
+                    <button onclick="app.setTab('absen')" id="tab-absen" class="nav-btn flex-none md:flex-none p-4 rounded-2xl font-bold flex items-center justify-center md:justify-start gap-3 transition-colors bg-sky-100 text-sky-600 min-w-[120px]">
+                        <span class="text-2xl">📋</span> <span class="text-lg">Isi Absen</span>
+                    </button>
+                    <!-- TAB BARU: REKAP LAPORAN -->
+                    <button onclick="app.setTab('laporan')" id="tab-laporan" class="nav-btn flex-none md:flex-none p-4 rounded-2xl font-bold flex items-center justify-center md:justify-start gap-3 transition-colors text-slate-500 hover:bg-slate-100 min-w-[120px]">
+                        <span class="text-2xl">📊</span> <span class="text-lg">Rekap Laporan</span>
+                    </button>
+                    <button onclick="app.setTab('kelas')" id="tab-kelas" class="nav-btn flex-none md:flex-none p-4 rounded-2xl font-bold flex items-center justify-center md:justify-start gap-3 transition-colors text-slate-500 hover:bg-slate-100 min-w-[120px]">
+                        <span class="text-2xl">🏫</span> <span class="text-lg">Data Kelas</span>
+                    </button>
+                    <button onclick="app.setTab('siswa')" id="tab-siswa" class="nav-btn flex-none md:flex-none p-4 rounded-2xl font-bold flex items-center justify-center md:justify-start gap-3 transition-colors text-slate-500 hover:bg-slate-100 min-w-[120px]">
+                        <span class="text-2xl">👥</span> <span class="text-lg">Data Siswa</span>
+                    </button>
+                    
+                    <div class="hidden md:block mt-auto bg-sky-50 p-4 rounded-2xl border-2 border-sky-100">
+                        <p class="text-xs font-bold text-sky-600 mb-2">Pilih Kelas Aktif:</p>
+                        <select id="sidebar-class-select" onchange="app.changeClass(this.value)" class="w-full bg-white p-3 rounded-xl font-bold text-slate-700 outline-none border-2 border-sky-200"></select>
+                    </div>
+                </aside>
+
+                <!-- Konten Utama Guru -->
+                <main id="guru-main">
+                    <div id="guru-content" class="max-w-5xl mx-auto"></div>
+                </main>
+
+            </div>
+        </div>
+
+    </div>
+
+    <div id="toast">✨ Pesan disini</div>
+
+    <!-- --- LOGIKA APLIKASI --- -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // MENGATUR MODE OFFLINE/LOKAL JIKA DIBUKA DI KOMPUTER SECARA LANGSUNG
+        let useFirebase = false;
+        let auth, db;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'absen-tk-app';
+        const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+
+        if (firebaseConfigStr && firebaseConfigStr !== "{}") {
+            try {
+                const firebaseConfig = JSON.parse(firebaseConfigStr);
+                if(Object.keys(firebaseConfig).length > 0) {
+                    const firebaseApp = initializeApp(firebaseConfig);
+                    auth = getAuth(firebaseApp);
+                    db = getFirestore(firebaseApp);
+                    useFirebase = true;
+                }
+            } catch(e) { console.error("Firebase init error", e); }
+        }
+
+        window.app = {
+            user: null,
+            classes: [],
+            students: [],
+            attendance: {}, 
+            allAttendanceRecords: [], // Menampung semua history untuk laporan
+            
+            selectedClass: '',
+            selectedDate: new Date().toISOString().split('T')[0],
+            
+            // State Filter Laporan Super Lengkap
+            reportType: 'harian', 
+            repDateHarian: new Date().toISOString().split('T')[0],
+            repStartMingguan: new Date().toISOString().split('T')[0],
+            repEndMingguan: new Date().toISOString().split('T')[0],
+            repMonthBulanan: new Date().toISOString().slice(0, 7), // YYYY-MM
+            repSemesterSelect: '1',
+            repYearGlobal: new Date().getFullYear().toString(),
+
+            // State UI
+            isTeacherMode: false,
+            activeTab: 'absen',
+            unsubAttendance: null,
+            unsubAllAttendance: null,
+
+            async init() {
+                document.addEventListener('fullscreenchange', () => this.updateFullScreenUI());
+                
+                if (!useFirebase) {
+                    this.user = { uid: 'local_user' };
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    document.getElementById('app-wrapper').classList.remove('hidden');
+                    setTimeout(() => this.showToast("Berjalan dalam Mode Lokal (File Komputer)"), 500);
+                    setTimeout(() => this.autoSeedKober(), 1500);
+                    this.updateHeaderUI();
+                    return;
+                }
+
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) { this.showToast("Gagal terhubung!"); }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        this.user = user;
+                        document.getElementById('loading-overlay').style.display = 'none';
+                        document.getElementById('app-wrapper').classList.remove('hidden');
+                        this.fetchData();
+                        this.fetchAllAttendanceHistory();
+                        setTimeout(() => this.autoSeedKober(), 1500);
+                    }
+                });
+
+                this.updateHeaderUI();
+            },
+
+            // Auto-Seed Data
+            async autoSeedKober() {
+                if (!this.user || this.classes.some(c => c.name === "Kelas KOBER")) return;
+                try {
+                    let classId = 'kober-' + Date.now();
+                    if (useFirebase) {
+                        const classDoc = await addDoc(collection(db, 'artifacts', appId, 'users', this.user.uid, 'classes'), { name: "Kelas KOBER", createdAt: new Date().toISOString() });
+                        classId = classDoc.id;
+                    } else {
+                        this.classes.push({ id: classId, name: "Kelas KOBER", createdAt: new Date().toISOString() });
+                    }
+
+                    const newStudents = [
+                        { name: "Senja Uno Xaviera Sandi", jk: "P" }, { name: "Harsa Asy'ari Musyadad", jk: "L" },
+                        { name: "Andyra Fadheela Latif", jk: "P" }, { name: "Zianisa Fitriyani", jk: "P" },
+                        { name: "Alfath Hidayat Putra", jk: "L" }, { name: "Maykha Prameswari Latif", jk: "P" },
+                        { name: "Muhammad Keefe Rayyanka Elfatih", jk: "L" }, { name: "Yara Sheza Mecca Taopik", jk: "P" },
+                        { name: "Muhammad Aslan Nur Latif", jk: "L" }, { name: "Nur Rizki Sakira", jk: "P" },
+                        { name: "Muhammad Rafkha Arasyid", jk: "L" }, { name: "Mazaya Zivana Fazya", jk: "P" },
+                        { name: "Najam Sky Alfa Mubarok", jk: "L" }, { name: "Lingga Pranaya", jk: "L" },
+                        { name: "KHADEEJA FERIHA TAQIYYA", jk: "P" }, { name: "Muhammad Hamzah", jk: "L" },
+                        { name: "Syahla Shazia", jk: "P" }, { name: "Muhammad Rayyan Al Muhyi Khairullah", jk: "L" },
+                        { name: "Nazira Nur Maulida Taufik", jk: "P" }, { name: "Wiljan Abiyya Sewakottama", jk: "L" },
+                        { name: "Muhammad Raffasya Abqory", jk: "L" }, { name: "Azkhia Alfahira Susanto", jk: "P" },
+                        { name: "Muhammad Syakir Aly Muchsin", jk: "L" }, { name: "Delta Afiandra El Mumtaz", jk: "L" },
+                        { name: "Sashikirani Younik Amadia", jk: "P" }, { name: "Muhammad Rais Fadilah", jk: "L" },
+                        { name: "Lula", jk: "P" }, { name: "Arsa", jk: "L" }, { name: "Rouf", jk: "L" }, { name: "Arsya", jk: "L" }
+                    ];
+                    
+                    if (useFirebase) {
+                        const studentsRef = collection(db, 'artifacts', appId, 'users', this.user.uid, 'students');
+                        for (let s of newStudents) await addDoc(studentsRef, { name: s.name, gender: s.jk, classId: classId });
+                    } else {
+                        newStudents.forEach((s, i) => {
+                            this.students.push({ id: 'std-' + Date.now() + i, name: s.name, gender: s.jk, classId: classId });
+                        });
+                    }
+                    if (!this.selectedClass) this.changeClass(classId);
+                    if (!useFirebase) this.renderAll(); 
+                } catch (e) { console.error(e); }
+            },
+
+            fetchData() {
+                if (!this.user || !useFirebase) return;
+                onSnapshot(collection(db, 'artifacts', appId, 'users', this.user.uid, 'classes'), (snapshot) => {
+                    let clsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    clsData.sort((a, b) => a.name.localeCompare(b.name));
+                    this.classes = clsData;
+                    if (this.classes.length > 0 && !this.selectedClass) this.selectedClass = this.classes[0].id;
+                    this.renderAll();
+                    this.fetchAttendance();
+                });
+
+                onSnapshot(collection(db, 'artifacts', appId, 'users', this.user.uid, 'students'), (snapshot) => {
+                    let stdData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    stdData.sort((a, b) => a.name.localeCompare(b.name));
+                    this.students = stdData;
+                    this.renderAll();
+                });
+            },
+
+            fetchAttendance() {
+                if (!this.user || !this.selectedClass || !this.selectedDate || !useFirebase) return;
+                if (this.unsubAttendance) this.unsubAttendance();
+                const docId = `${this.selectedClass}_${this.selectedDate}`;
+                this.unsubAttendance = onSnapshot(doc(db, 'artifacts', appId, 'users', this.user.uid, 'attendance', docId), (docSnap) => {
+                    this.attendance = docSnap.exists() ? (docSnap.data().records || {}) : {};
+                    this.renderAll();
+                });
+            },
+
+            fetchAllAttendanceHistory() {
+                if (!this.user || !useFirebase) return;
+                this.unsubAllAttendance = onSnapshot(collection(db, 'artifacts', appId, 'users', this.user.uid, 'attendance'), (snapshot) => {
+                    this.allAttendanceRecords = snapshot.docs.map(doc => doc.data());
+                    if(this.activeTab === 'laporan') this.renderGuruContent();
+                });
+            },
+
+            // --- PUSAT PENGIRIMAN DATA KE GOOGLE SPREADSHEET (WEBHOOK) ---
+            syncToSheet(action, payload) {
+                // ==========================================
+                // MASUKKAN URL WEBHOOK GOOGLE APPS SCRIPT ANDA DI SINI
+                // ==========================================
+                const webhookUrl = "https://script.google.com/macros/s/AKfycbyxilsIpOHhZZnkCgYJB62UONDTNg3yWO7uIMZR9Nli12GPXZzEGvNeLKY8REvc-9Ll2A/exec";
+
+                if(!webhookUrl || !webhookUrl.includes("script.google.com")) return;
+
+                let params = new URLSearchParams();
+                params.append('action', action);
+                params.append('waktu', new Date().toLocaleString('id-ID'));
+
+                // Masukkan semua data ke dalam URL
+                for(let key in payload) {
+                    params.append(key, payload[key] || "-");
+                }
+
+                const finalUrl = `${webhookUrl}?${params.toString()}`;
+                
+                fetch(finalUrl, { mode: 'no-cors' }).catch(err => console.log("Gagal sync:", err));
+            },
+
+            // --- FUNGSI INTERAKSI UMUM ---
+            toggleFullScreen() {
+                if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(e => {});
+                else if (document.exitFullscreen) document.exitFullscreen();
+            },
+            updateFullScreenUI() {
+                const icon = document.getElementById('fullscreen-icon');
+                if (icon) icon.textContent = document.fullscreenElement ? '↙️' : '🔲';
+            },
+            toggleMode() {
+                this.isTeacherMode = !this.isTeacherMode;
+                document.getElementById('mode-anak').style.display = this.isTeacherMode ? 'none' : 'block';
+                document.getElementById('mode-guru').style.display = this.isTeacherMode ? 'block' : 'none';
+                document.getElementById('mode-icon').textContent = this.isTeacherMode ? '🧸' : '👩‍🏫';
+                document.getElementById('mode-text').textContent = this.isTeacherMode ? 'Mode Papan Anak' : 'Mode Guru';
+                this.renderAll();
+            },
+            setTab(tab) {
+                this.activeTab = tab;
+                const tabs = ['absen', 'laporan', 'kelas', 'siswa'];
+                tabs.forEach(t => {
+                    const btn = document.getElementById(`tab-${t}`);
+                    if(btn) btn.className = t === tab ? "nav-btn flex-none md:flex-none p-4 rounded-2xl font-bold flex items-center justify-center md:justify-start gap-3 transition-colors bg-sky-100 text-sky-600 min-w-[120px]" : "nav-btn flex-none md:flex-none p-4 rounded-2xl font-bold flex items-center justify-center md:justify-start gap-3 transition-colors text-slate-500 hover:bg-slate-100 min-w-[120px]";
+                });
+                this.renderGuruContent();
+            },
+            changeClass(classId) {
+                this.selectedClass = classId;
+                this.fetchAttendance();
+                this.updateHeaderUI();
+                this.renderAll();
+            },
+            changeDate(dateVal) { 
+                this.selectedDate = dateVal; 
+                if(!useFirebase) {
+                    const record = this.allAttendanceRecords.find(r => r.classId === this.selectedClass && r.date === this.selectedDate);
+                    this.attendance = record ? { ...record.records } : {};
+                    this.renderAll();
+                } else this.fetchAttendance(); 
+                this.updateHeaderUI(); 
+            },
+            
+            // Update Filter Laporan
+            updateReportFilter(field, value) {
+                this[field] = value;
+                this.renderGuruContent();
+            },
+
+            // PROSES ABSEN
+            async childTapAttendance(studentId) {
+                if (this.isTeacherMode || !this.user || !this.selectedClass) return;
+                const nextStatus = this.attendance[studentId] === 'Hadir' ? null : 'Hadir';
+                this.saveAttendanceStatus(studentId, nextStatus);
+            },
+            async teacherSetAttendance(studentId, status) {
+                if (!this.user || !this.selectedClass) return;
+                this.saveAttendanceStatus(studentId, status);
+            },
+            async saveAttendanceStatus(studentId, status) {
+                if (status === null) delete this.attendance[studentId];
+                else this.attendance[studentId] = status;
+                this.renderAll();
+
+                if (!useFirebase) {
+                    let record = this.allAttendanceRecords.find(r => r.classId === this.selectedClass && r.date === this.selectedDate);
+                    if (record) record.records = { ...this.attendance };
+                    else this.allAttendanceRecords.push({ classId: this.selectedClass, date: this.selectedDate, records: { ...this.attendance } });
+                } else {
+                    const docId = `${this.selectedClass}_${this.selectedDate}`;
+                    try { await setDoc(doc(db, 'artifacts', appId, 'users', this.user.uid, 'attendance', docId), { classId: this.selectedClass, date: this.selectedDate, records: this.attendance }, { merge: true }); } 
+                    catch (e) { this.showToast("Gagal menyimpan absen!"); return; }
+                }
+
+                // Sync ke Spreadsheet
+                const siswa = this.students.find(s => s.id === studentId);
+                const kelas = this.classes.find(c => c.id === this.selectedClass);
+                this.syncToSheet('absen', { 
+                    kelas: kelas ? kelas.name : "Unknown", 
+                    nama: siswa ? siswa.name : "Unknown", 
+                    status: status === null ? "Batal Absen" : status, 
+                    tanggal: this.selectedDate 
+                });
+            },
+
+            // --- CRUD KELAS ---
+            async addClass(e) {
+                e.preventDefault();
+                const name = document.getElementById('input-class-name').value.trim();
+                if (!name) return;
+                try { 
+                    if(useFirebase) await addDoc(collection(db, 'artifacts', appId, 'users', this.user.uid, 'classes'), { name: name }); 
+                    else { this.classes.push({ id: 'cls-' + Date.now(), name: name }); this.renderAll(); }
+                    
+                    document.getElementById('input-class-name').value=''; 
+                    this.showToast('Kelas ditambahkan!'); 
+                    this.syncToSheet('tambah_kelas', { kelas: name });
+                } catch (e) {}
+            },
+            async editClass(id, oldName) {
+                const newName = prompt("Ubah nama kelas menjadi:", oldName);
+                if(newName && newName.trim() !== "" && newName !== oldName) {
+                    try {
+                        if(useFirebase) await setDoc(doc(db, 'artifacts', appId, 'users', this.user.uid, 'classes', id), { name: newName.trim() }, {merge: true});
+                        else { const c = this.classes.find(x => x.id === id); if(c) c.name = newName.trim(); this.renderAll(); }
+                        this.showToast('Kelas diubah!');
+                        this.syncToSheet('edit_kelas', { kelasLama: oldName, kelasBaru: newName.trim() });
+                    } catch (e) {}
+                }
+            },
+            async deleteClass(id, name) { 
+                if(confirm(`Yakin ingin menghapus kelas ${name}?`)) {
+                    try { 
+                        if(useFirebase) await deleteDoc(doc(db, 'artifacts', appId, 'users', this.user.uid, 'classes', id)); 
+                        else { this.classes = this.classes.filter(c => c.id !== id); this.renderAll(); }
+                        if (this.selectedClass === id) this.selectedClass = ''; 
+                        this.showToast('Dihapus 🗑️'); 
+                        this.syncToSheet('hapus_kelas', { kelas: name });
+                    } catch (e) {} 
+                }
+            },
+
+            // --- CRUD SISWA ---
+            async addStudent(e) {
+                e.preventDefault();
+                const name = document.getElementById('input-student-name').value.trim();
+                const jk = document.getElementById('input-student-jk').value;
+                if (!name || !this.selectedClass) return;
+                try { 
+                    if (useFirebase) await addDoc(collection(db, 'artifacts', appId, 'users', this.user.uid, 'students'), { name, gender: jk, classId: this.selectedClass }); 
+                    else { this.students.push({ id: 'std-' + Date.now(), name: name, gender: jk, classId: this.selectedClass }); this.renderAll(); }
+                    
+                    document.getElementById('input-student-name').value=''; 
+                    this.showToast('Siswa ditambahkan!'); 
+                    const kelas = this.classes.find(c => c.id === this.selectedClass)?.name;
+                    this.syncToSheet('tambah_siswa', { kelas: kelas, nama: name, gender: jk });
+                } catch (e) {}
+            },
+            async editStudent(id, oldName) {
+                const newName = prompt("Ubah nama siswa menjadi:", oldName);
+                if(newName && newName.trim() !== "" && newName !== oldName) {
+                    try {
+                        if(useFirebase) await setDoc(doc(db, 'artifacts', appId, 'users', this.user.uid, 'students', id), { name: newName.trim() }, {merge: true});
+                        else { const s = this.students.find(x => x.id === id); if(s) s.name = newName.trim(); this.renderAll(); }
+                        this.showToast('Siswa diubah!');
+                        const kelas = this.classes.find(c => c.id === this.selectedClass)?.name;
+                        this.syncToSheet('edit_siswa', { kelas: kelas, namaLama: oldName, namaBaru: newName.trim() });
+                    } catch (e) {}
+                }
+            },
+            async deleteStudent(id, name) { 
+                if(confirm(`Yakin hapus siswa ${name}?`)) {
+                    try { 
+                        if(useFirebase) await deleteDoc(doc(db, 'artifacts', appId, 'users', this.user.uid, 'students', id)); 
+                        else { this.students = this.students.filter(s => s.id !== id); this.renderAll(); }
+                        this.showToast('Dihapus 🗑️'); 
+                        const kelas = this.classes.find(c => c.id === this.selectedClass)?.name;
+                        this.syncToSheet('hapus_siswa', { kelas: kelas, nama: name });
+                    } catch (e) {} 
+                }
+            },
+
+            // --- HITUNG REKAP LAPORAN LENGKAP ---
+            calculateReportData() {
+                const classStudents = this.students.filter(s => s.classId === this.selectedClass);
+                let filteredRecords = this.allAttendanceRecords.filter(r => r.classId === this.selectedClass);
+                let title = "";
+
+                switch(this.reportType) {
+                    case 'harian':
+                        filteredRecords = filteredRecords.filter(r => r.date === this.repDateHarian);
+                        title = `Harian (${this.repDateHarian})`;
+                        break;
+                    case 'mingguan':
+                        filteredRecords = filteredRecords.filter(r => r.date >= this.repStartMingguan && r.date <= this.repEndMingguan);
+                        title = `Mingguan (${this.repStartMingguan} s/d ${this.repEndMingguan})`;
+                        break;
+                    case 'bulanan':
+                        filteredRecords = filteredRecords.filter(r => r.date.startsWith(this.repMonthBulanan));
+                        const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+                        const mIndex = parseInt(this.repMonthBulanan.split('-')[1]) - 1;
+                        title = `Bulanan (${monthNames[mIndex] || ''} ${this.repMonthBulanan.split('-')[0]})`;
+                        break;
+                    case 'semester':
+                        filteredRecords = filteredRecords.filter(r => {
+                            if(!r.date.startsWith(this.repYearGlobal)) return false;
+                            const m = parseInt(r.date.split('-')[1]);
+                            return this.repSemesterSelect === '1' ? (m >= 1 && m <= 6) : (m >= 7 && m <= 12);
+                        });
+                        title = `Semester ${this.repSemesterSelect} - Tahun ${this.repYearGlobal}`;
+                        break;
+                    case 'tahunan':
+                        filteredRecords = filteredRecords.filter(r => r.date.startsWith(this.repYearGlobal));
+                        title = `Tahunan (${this.repYearGlobal})`;
+                        break;
+                }
+
+                let rekapData = {};
+                classStudents.forEach(s => { rekapData[s.id] = { H:0, I:0, S:0, A:0 }; });
+
+                filteredRecords.forEach(recordObj => {
+                    const dailyData = recordObj.records || {};
+                    for (const [studentId, status] of Object.entries(dailyData)) {
+                        if (rekapData[studentId]) {
+                            if (status === 'Hadir') rekapData[studentId].H++;
+                            if (status === 'Izin') rekapData[studentId].I++;
+                            if (status === 'Sakit') rekapData[studentId].S++;
+                            if (status === 'Alpa') rekapData[studentId].A++;
+                        }
+                    }
+                });
+
+                return { rekapData, title, classStudents };
+            },
+
+            printReport() { window.print(); },
+            exportRekapCSV() {
+                if (!this.selectedClass) return;
+                const clsName = this.classes.find(c => c.id === this.selectedClass)?.name || "Kelas";
+                const { rekapData, title, classStudents } = this.calculateReportData();
+                
+                let csv = "data:text/csv;charset=utf-8,PAUD TERPADU KB dan TK AL-ISTIQLAL\n";
+                csv += `Laporan Absensi: ${title}\nKelas: ${clsName}\n\n`;
+                csv += "Nama Siswa,Hadir (H),Izin (I),Sakit (S),Alpa (A)\n";
+
+                classStudents.forEach(s => {
+                    const r = rekapData[s.id] || {H:0, I:0, S:0, A:0};
+                    csv += `"${s.name}",${r.H},${r.I},${r.S},${r.A}\n`;
+                });
+                
+                const link = document.createElement("a");
+                link.setAttribute("href", encodeURI(csv));
+                link.setAttribute("download", `Rekap_${clsName}_${title.replace(/\s/g,'_')}.csv`);
+                document.body.appendChild(link); link.click(); document.body.removeChild(link);
+            },
+
+            // --- FUNGSI RENDER UI ---
+            updateHeaderUI() {
+                const cls = this.classes.find(c => c.id === this.selectedClass);
+                document.getElementById('header-class-name').textContent = cls ? cls.name : "Pilih Kelas";
+                const options = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+                document.getElementById('header-date').textContent = new Date(this.selectedDate).toLocaleDateString('id-ID', options);
+                
+                const sidebarSelect = document.getElementById('sidebar-class-select');
+                if (sidebarSelect) sidebarSelect.innerHTML = this.classes.length === 0 ? '<option value="">Kosong</option>' : this.classes.map(c => `<option value="${c.id}" ${this.selectedClass === c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+            },
+
+            renderAll() {
+                this.updateHeaderUI();
+                this.isTeacherMode ? this.renderGuruContent() : this.renderPapanAnak();
+            },
+
+            renderPapanAnak() {
+                const gridContainer = document.getElementById('grid-anak');
+                const emptyState = document.getElementById('empty-anak');
+                if (!this.selectedClass || this.students.filter(s => s.classId === this.selectedClass).length === 0) {
+                    gridContainer.innerHTML = ''; emptyState.classList.remove('hidden'); return;
+                }
+                emptyState.classList.add('hidden');
+
+                let html = '';
+                this.students.filter(s => s.classId === this.selectedClass).forEach(s => {
+                    const isPresent = this.attendance[s.id] === 'Hadir';
+                    html += `
+                        <div onclick="app.childTapAttendance('${s.id}')" class="kid-card ${isPresent ? 'present' : 'idle'} relative flex flex-col items-center justify-center p-6 rounded-[2.5rem] min-h-[160px] md:min-h-[200px]">
+                            ${isPresent ? `<div class="absolute top-2 right-2 bg-white text-green-600 px-3 py-1 rounded-full text-xs font-black shadow-md star-anim">🌟 Hadir</div>` : ''}
+                            <div class="avatar text-6xl md:text-7xl mb-3 drop-shadow-sm pointer-events-none">${s.gender === 'P' ? '👧' : (s.gender === 'L' ? '👦' : '🧒')}</div>
+                            <div class="font-black text-center text-lg md:text-2xl leading-tight break-words w-full pointer-events-none">${s.name}</div>
+                            ${!isPresent ? '<div class="text-xs font-bold mt-2 opacity-50 pointer-events-none">Ketuk untuk Absen!</div>' : ''}
+                        </div>`;
+                });
+                gridContainer.innerHTML = html;
+            },
+
+            renderGuruContent() {
+                const container = document.getElementById('guru-content');
+                let html = '';
+
+                // --- TAB: ISI ABSEN ---
+                if (this.activeTab === 'absen') {
+                    const classStudents = this.students.filter(s => s.classId === this.selectedClass);
+                    let tableHtml = classStudents.map(s => {
+                        const status = this.attendance[s.id] || null;
+                        const btn = (type, color, label) => `<button onclick="app.teacherSetAttendance('${s.id}', '${type}')" class="px-4 py-2 rounded-xl font-bold text-sm transition-all border-2 ${status === type ? `bg-${color}-500 text-white border-${color}-500 shadow-md transform scale-105` : `bg-white text-slate-500 border-slate-200 hover:border-${color}-300`}">${label}</button>`;
+                        return `
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center p-4 bg-white rounded-2xl border-2 border-slate-100 mb-3 shadow-sm">
+                                <span class="font-bold text-lg text-slate-700 mb-3 md:mb-0">${s.name}</span>
+                                <div class="flex flex-wrap gap-2">
+                                    ${btn('Hadir', 'green', 'Hadir')} ${btn('Izin', 'blue', 'Izin')} ${btn('Sakit', 'yellow', 'Sakit')} ${btn('Alpa', 'red', 'Alpa')}
+                                    ${status !== null ? `<button onclick="app.teacherSetAttendance('${s.id}', null)" class="px-3 py-2 text-slate-400 hover:text-red-500" title="Reset">✖️</button>` : ''}
+                                </div>
+                            </div>`;
+                    }).join('');
+
+                    html = `
+                        <div class="mb-6 bg-white p-6 rounded-3xl border-2 border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-end">
+                            <div class="w-full md:w-auto">
+                                <label class="block text-sm font-bold text-slate-500 mb-2">Pilih Tanggal Absen</label>
+                                <input type="date" value="${this.selectedDate}" onchange="app.changeDate(this.value)" class="w-full bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border-2 border-slate-200 outline-none focus:border-sky-400">
+                            </div>
+                            <button onclick="app.setTab('laporan')" class="w-full md:w-auto bg-sky-500 hover:bg-sky-600 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md">
+                                Buka Rekap Laporan ➡️
+                            </button>
+                        </div>
+                        <div class="space-y-2">${classStudents.length === 0 ? '<div class="text-center p-10 text-slate-400 font-bold">Pilih kelas di menu kiri atau tambah siswa.</div>' : tableHtml}</div>`;
+                }
+                
+                // --- TAB: REKAP LAPORAN ---
+                else if (this.activeTab === 'laporan') {
+                    if (!this.selectedClass) { html = `<div class="text-center p-10 font-bold text-slate-400">Pilih kelas di sidebar kiri terlebih dahulu.</div>`; } 
+                    else {
+                        const { rekapData, title, classStudents } = this.calculateReportData();
+                        const clsName = this.classes.find(c => c.id === this.selectedClass)?.name;
+
+                        let trHtml = classStudents.map((s, index) => {
+                            const r = rekapData[s.id] || {H:0,I:0,S:0,A:0};
+                            return `<tr class="border-b border-slate-200 hover:bg-slate-50">
+                                    <td class="p-3 text-center">${index + 1}</td>
+                                    <td class="p-3 font-bold text-slate-700">${s.name}</td>
+                                    <td class="p-3 text-center font-black text-green-600">${r.H}</td>
+                                    <td class="p-3 text-center font-bold text-blue-600">${r.I}</td>
+                                    <td class="p-3 text-center font-bold text-yellow-600">${r.S}</td>
+                                    <td class="p-3 text-center font-bold text-red-600">${r.A}</td>
+                                </tr>`;
+                        }).join('');
+
+                        // Render Kontrol Filter Laporan Dinamis
+                        let filterInputsHtml = '';
+                        if(this.reportType === 'harian') {
+                            filterInputsHtml = `<div><label class="block text-sm font-bold text-slate-500 mb-2">Tanggal</label><input type="date" value="${this.repDateHarian}" onchange="app.updateReportFilter('repDateHarian', this.value)" class="bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border-2 border-slate-200 outline-none"></div>`;
+                        } else if(this.reportType === 'mingguan') {
+                            filterInputsHtml = `<div class="flex gap-2">
+                                <div><label class="block text-sm font-bold text-slate-500 mb-2">Dari Tanggal</label><input type="date" value="${this.repStartMingguan}" onchange="app.updateReportFilter('repStartMingguan', this.value)" class="bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border-2 border-slate-200 outline-none w-36"></div>
+                                <div><label class="block text-sm font-bold text-slate-500 mb-2">Sampai</label><input type="date" value="${this.repEndMingguan}" onchange="app.updateReportFilter('repEndMingguan', this.value)" class="bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border-2 border-slate-200 outline-none w-36"></div>
+                            </div>`;
+                        } else if(this.reportType === 'bulanan') {
+                            filterInputsHtml = `<div><label class="block text-sm font-bold text-slate-500 mb-2">Pilih Bulan</label><input type="month" value="${this.repMonthBulanan}" onchange="app.updateReportFilter('repMonthBulanan', this.value)" class="bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border-2 border-slate-200 outline-none"></div>`;
+                        } else if(this.reportType === 'semester') {
+                            filterInputsHtml = `<div class="flex gap-2">
+                                <div><label class="block text-sm font-bold text-slate-500 mb-2">Semester</label><select onchange="app.updateReportFilter('repSemesterSelect', this.value)" class="bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border-2 border-slate-200 outline-none"><option value="1" ${this.repSemesterSelect==='1'?'selected':''}>Semester 1 (Ganjil)</option><option value="2" ${this.repSemesterSelect==='2'?'selected':''}>Semester 2 (Genap)</option></select></div>
+                                <div><label class="block text-sm font-bold text-slate-500 mb-2">Tahun</label><input type="number" value="${this.repYearGlobal}" onchange="app.updateReportFilter('repYearGlobal', this.value)" class="bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border-2 border-slate-200 outline-none w-24"></div>
+                            </div>`;
+                        } else if(this.reportType === 'tahunan') {
+                            filterInputsHtml = `<div><label class="block text-sm font-bold text-slate-500 mb-2">Tahun Lengkap</label><input type="number" value="${this.repYearGlobal}" onchange="app.updateReportFilter('repYearGlobal', this.value)" class="bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border-2 border-slate-200 outline-none w-28"></div>`;
+                        }
+
+                        html = `
+                            <div class="print-hide mb-6 bg-white p-6 rounded-3xl border-2 border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 items-end flex-wrap">
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-500 mb-2">Jenis Laporan</label>
+                                    <select onchange="app.updateReportFilter('reportType', this.value)" class="bg-slate-50 p-3 rounded-xl font-bold text-sky-600 border-2 border-sky-200 outline-none">
+                                        <option value="harian" ${this.reportType==='harian'?'selected':''}>Harian</option>
+                                        <option value="mingguan" ${this.reportType==='mingguan'?'selected':''}>Mingguan (Rentang)</option>
+                                        <option value="bulanan" ${this.reportType==='bulanan'?'selected':''}>Bulanan</option>
+                                        <option value="semester" ${this.reportType==='semester'?'selected':''}>Semester (6 Bulan)</option>
+                                        <option value="tahunan" ${this.reportType==='tahunan'?'selected':''}>Tahunan (12 Bulan)</option>
+                                    </select>
+                                </div>
+                                ${filterInputsHtml}
+                                <div class="flex gap-2 ml-auto w-full md:w-auto mt-4 md:mt-0">
+                                    <button onclick="app.printReport()" class="flex-1 bg-slate-800 hover:bg-slate-900 text-white px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md">🖨️ Cetak</button>
+                                    <button onclick="app.exportRekapCSV()" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md">📥 Excel</button>
+                                </div>
+                            </div>
+
+                            <!-- Area Cetak Laporan -->
+                            <div id="print-area" class="bg-white p-8 rounded-3xl border-2 border-slate-100 shadow-sm">
+                                <div class="text-center mb-6">
+                                    <h2 class="text-2xl font-black text-slate-800 uppercase">REKAPITULASI ABSENSI SISWA</h2>
+                                    <h3 class="text-xl font-bold text-slate-600">PAUD TERPADU KB dan TK AL-ISTIQLAL</h3>
+                                    <p class="text-slate-500 font-bold mt-2">Kelas: ${clsName} | Periode: ${title}</p>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr class="bg-slate-100 border-b-2 border-slate-300">
+                                                <th class="p-3 font-bold text-slate-600 text-center w-12">No</th>
+                                                <th class="p-3 font-bold text-slate-600">Nama Lengkap</th>
+                                                <th class="p-3 font-bold text-slate-600 text-center text-green-700">Hadir (H)</th>
+                                                <th class="p-3 font-bold text-slate-600 text-center text-blue-700">Izin (I)</th>
+                                                <th class="p-3 font-bold text-slate-600 text-center text-yellow-700">Sakit (S)</th>
+                                                <th class="p-3 font-bold text-slate-600 text-center text-red-700">Alpa (A)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${classStudents.length > 0 ? trHtml : `<tr><td colspan="6" class="text-center p-6 text-slate-400 font-bold">Tidak ada data siswa</td></tr>`}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+                
+                // --- TAB: KELOLA KELAS ---
+                else if (this.activeTab === 'kelas') {
+                    const listHtml = this.classes.map(c => `
+                        <div class="flex justify-between items-center bg-white p-4 rounded-2xl border-2 border-slate-100 mb-3">
+                            <span class="font-bold text-lg text-slate-700">${c.name}</span>
+                            <div>
+                                <button onclick="app.editClass('${c.id}', '${c.name.replace(/'/g, "\\'")}')" class="text-sky-500 hover:text-sky-700 p-2 bg-sky-50 rounded-lg font-bold mr-2">✏️ Edit</button>
+                                <button onclick="app.deleteClass('${c.id}', '${c.name.replace(/'/g, "\\'")}')" class="text-red-400 hover:text-red-600 p-2 bg-red-50 rounded-lg font-bold">🗑️ Hapus</button>
+                            </div>
+                        </div>`).join('');
+                    html = `<form onsubmit="app.addClass(event)" class="flex gap-2 mb-6"><input type="text" id="input-class-name" placeholder="Nama Kelas Baru..." required class="flex-1 bg-white p-4 rounded-2xl font-bold text-slate-700 border-2 border-slate-200 outline-none focus:border-sky-400"><button type="submit" class="bg-sky-500 text-white px-6 rounded-2xl font-black text-xl shadow-md">➕ Tambah</button></form>${listHtml}`;
+                }
+                
+                // --- TAB: KELOLA SISWA ---
+                else if (this.activeTab === 'siswa') {
+                    if (!this.selectedClass) html = `<div class="text-center p-10 font-bold text-slate-400">Pilih kelas di sidebar kiri.</div>`;
+                    else {
+                        const listHtml = this.students.filter(s => s.classId === this.selectedClass).map(s => `
+                            <div class="flex justify-between items-center bg-white p-4 rounded-2xl border-2 border-slate-100 mb-3">
+                                <div class="flex items-center gap-3"><span class="text-2xl">${s.gender === 'P' ? '👧' : '👦'}</span><span class="font-bold text-lg text-slate-700">${s.name}</span></div>
+                                <div class="flex gap-1 md:gap-2">
+                                    <button onclick="app.editStudent('${s.id}', '${s.name.replace(/'/g, "\\'")}')" class="text-sky-500 hover:text-sky-700 p-2 bg-sky-50 rounded-lg font-bold text-sm md:text-base">✏️ Edit</button>
+                                    <button onclick="app.deleteStudent('${s.id}', '${s.name.replace(/'/g, "\\'")}')" class="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-lg font-bold text-sm md:text-base">🗑️ Hapus</button>
+                                </div>
+                            </div>`).join('');
+                        html = `<form onsubmit="app.addStudent(event)" class="flex flex-col md:flex-row gap-2 mb-6 bg-white p-4 rounded-3xl border-2 border-slate-100 shadow-sm"><input type="text" id="input-student-name" placeholder="Nama Siswa..." required class="flex-1 bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border-2 border-slate-200 outline-none"><select id="input-student-jk" class="bg-slate-50 p-3 rounded-xl font-bold text-slate-700 border-2 border-slate-200 outline-none"><option value="L">Laki-laki (👦)</option><option value="P">Perempuan (👧)</option></select><button type="submit" class="bg-sky-500 text-white px-6 py-3 rounded-xl font-bold shadow-md">Tambah</button></form>${listHtml}`;
+                    }
+                }
+                container.innerHTML = html;
+            },
+            showToast(msg) { const t = document.getElementById('toast'); t.innerHTML = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500); }
+        };
+
+        window.addEventListener('DOMContentLoaded', () => window.app.init());
+    </script>
+</body>
+</html>
