@@ -216,26 +216,27 @@
                 localStorage.setItem('paud_attendance', JSON.stringify(this.allAttendanceRecords));
             },
 
-            // --- PUSAT PENGIRIMAN DATA KE GOOGLE SPREADSHEET (WEBHOOK) ---
-            syncToSheet(action, payload) {
-                // ==========================================
-                // MASUKKAN URL WEBHOOK GOOGLE APPS SCRIPT ANDA DI SINI
-                // ==========================================
-                const webhookUrl = "https://script.google.com/macros/s/AKfycbzZwB5bQGk9uf4WctYhcBzI1n_7XdrEchX0GFg_8yjt7kuYd3IFf4Dr1_ahL4ik_RgrMA/exec";
+    // --- PUSAT PENGIRIMAN DATA KE GOOGLE SPREADSHEET (WEBHOOK) ---
+syncToSheet(action, payload) {
+    // ==========================================
+    // MASUKKAN URL WEBHOOK GOOGLE APPS SCRIPT ANDA DI SINI
+    // ==========================================
+    const webhookUrl = "https://script.google.com/macros/s/AKfycbwPjytaiD9Msk5UALK7IM4CtxD6MFPx5vmjI47kWBQl6kFCyludjrq3A4G8ED6qyOypEA/exec";
 
-                if(!webhookUrl || webhookUrl === "https://script.google.com/macros/s/AKfycbzZwB5bQGk9uf4WctYhcBzI1n_7XdrEchX0GFg_8yjt7kuYd3IFf4Dr1_ahL4ik_RgrMA/exec" || !webhookUrl.includes("script.google.com")) return;
+    // Pengecekan disederhanakan: hanya cek apakah URL kosong atau bukan dari Google
+    if(!webhookUrl || !webhookUrl.includes("script.google.com")) return;
 
-                let params = new URLSearchParams();
-                params.append('action', action);
-                params.append('waktu', new Date().toLocaleString('id-ID'));
+    let params = new URLSearchParams();
+    params.append('action', action);
+    params.append('waktu', new Date().toLocaleString('id-ID'));
 
-                for(let key in payload) {
-                    params.append(key, payload[key] || "-");
-                }
+    for(let key in payload) {
+        params.append(key, payload[key] || "-");
+    }
 
-                const finalUrl = `${webhookUrl}?${params.toString()}`;
-                fetch(finalUrl, { mode: 'no-cors' }).catch(err => console.log("Gagal sync:", err));
-            },
+    const finalUrl = `${webhookUrl}?${params.toString()}`;
+    fetch(finalUrl, { mode: 'no-cors' }).catch(err => console.log("Gagal sync:", err));
+},
 
             toggleFullScreen() {
                 if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(e => {});
